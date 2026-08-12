@@ -1,0 +1,44 @@
+name: ETF V2 策略扫描
+
+# 每天北京时间 14:25（UTC 06:25）自动执行，周一至周五
+# 电脑关机/休眠完全不影响，由 GitHub 云端服务器运行
+on:
+  schedule:
+    - cron: '25 6 * * 1-5'
+  workflow_dispatch: # 支持在 GitHub 页面手动触发（调试用）
+
+permissions:
+  contents: write # 允许把持仓状态提交回仓库，供下次运行读取
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 运行策略扫描（自动双通道推送）
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          SMTP_USER: 18201691896@163.com
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_TO: 18201691896@163.com
+        run: python etf_v2_scan.py
+
+      - name: 持久化持仓状态
+        run: |
+          git config user.name "ETF Scan Bot"
+          git config user.email "etf-bot@users.noreply.github.com"
+          git add runtime/etf_v2_state.json
+          if git diff --cached --quiet; then
+            echo "持仓状态无变化"
+          else
+            git commit -m "chore: 更新策略持仓状态 $(date +%Y-%m-%d)"
+            git push
+            echo "持仓状态已提交"
+          fi
