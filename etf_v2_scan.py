@@ -18,6 +18,7 @@ ETF V2 动量轮动策略 · 自动扫描脚本
 import argparse
 import json
 import os
+import re
 import smtplib
 import ssl
 import sys
@@ -66,13 +67,14 @@ CONFIG_FILE = SCRIPT_DIR / "runtime" / "etf_v2_config.json"
 # 配置管理
 # ============================================================
 def load_config():
-    cfg = {"serverchan_key": "", "email_user": "", "email_pass": "", "email_to": ""}
+    cfg = {"serverchan_key": "", "sc3_key": "", "email_user": "", "email_pass": "", "email_to": ""}
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg.update(json.load(f))
     # 环境变量覆盖（GitHub Actions 云端运行使用，不落盘更安全）
     env_map = {
         "SERVERCHAN_KEY": "serverchan_key",
+        "SC3_KEY": "sc3_key",
         "SMTP_USER": "email_user",
         "SMTP_PASS": "email_pass",
         "SMTP_TO": "email_to",
@@ -91,13 +93,22 @@ def save_config(cfg):
 
 
 # ============================================================
-# Server酱推送 — 推送到微信（关注「方糖」公众号即可）
+# Server酱推送 — 自动识别双版本：
+#   sct 开头  → Turbo版（推微信服务号）
+#   sctp 开头 → SC3版（推手机App，系统级弹窗）
 # ============================================================
 def push_serverchan(sendkey, title, content):
-    """通过 Server酱 推送到微信"""
+    """通过 Server酱 推送（自动识别 Turbo sct / SC3 sctp）"""
     if not sendkey:
         return False
-    url = f"https://sctapi.ftqq.com/{sendkey}.send"
+    if sendkey.startswith("sctp"):
+        uid = re.match(r"^sctp(\d+)t", sendkey)
+        if not uid:
+            print("[Server酱推送失败] sctp key 格式无效", file=sys.stderr)
+            return False
+        url = f"https://{uid.group(1)}.push.ft07.com/send/{sendkey}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{sendkey}.send"
     payload = urllib.parse.urlencode({
         "title": title,
         "desp": content,
@@ -108,7 +119,7 @@ def push_serverchan(sendkey, title, content):
             result = json.loads(resp.read().decode("utf-8"))
             return result.get("code") == 0
     except Exception as e:
-        print(f"[微信推送失败] {e}", file=sys.stderr)
+        print(f"[Server酱推送失败] {e}", file=sys.stderr)
         return False
 
 
@@ -825,6 +836,7 @@ def run_scan(cloud=False, dry=False):
     """扫描主流程。cloud=True 状态存163邮箱；dry=True 不更新状态不推送"""
     cfg = load_config()
     sc_key = cfg.get("serverchan_key", "")
+    sc3_key = cfg.get("sc3_key", "")
     email_user = cfg.get("email_user", "")
     email_pass = cfg.get("email_pass", "")
     email_to = cfg.get("email_to", "")
@@ -887,16 +899,22 @@ def run_scan(cloud=False, dry=False):
             save_state(state)
             print(f"\n💾 状态已保存: {state['position_name']}（{state['position']}）")
 
-    # 双通道推送
+    # 多通道推送（微信服务号 + App + 邮件）
     if not dry:
-        if sc_key:
-            title = f"ETF {'调仓' if result['action'] == 'switch' else ''} {result['current_name']}"
-            ok = push_serverchan(sc_key, title, format_wechat_content(result))
-            print("📲 已推送到微信" if ok else "⚠️ 微信推送失败")
+        pushed = False
+        for key in (sc_key, sc3_key):
+            if key:
+                title = f"ETF {'调仓' if result['action'] == 'switch' else ''} {result['current_name']}"
+                ok = push_serverchan(key, title, format_wechat_content(result))
+                print("📲 已推送到Server酱" if ok else "⚠️ Server酱推送失败")
+                pushed = pushed or ok
         if email_pass:
             subject = f"ETF V2 {'⚠️调仓' if result['action'] == 'switch' else '持仓'} · {result['date']}"
             ok = push_email(email_user, email_pass, email_to, subject, format_email_html(result))
             print("📧 已推送到邮箱" if ok else "⚠️ 邮件推送失败")
+            pushed = pushed or ok
+        if not pushed:
+            print("⚠️ 所有推送通道均未成功", file=sys.stderr)
 
     return result
 

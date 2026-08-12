@@ -22,9 +22,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 运行策略扫描（自动双通道推送）
+      - name: 运行策略扫描（自动多通道推送：微信+App+邮件）
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          SC3_KEY: ${{ secrets.SC3_KEY }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
