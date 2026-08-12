@@ -113,7 +113,10 @@ def push_serverchan(sendkey, title, content):
         "title": title,
         "desp": content,
     }).encode("utf-8")
-    req = urllib.request.Request(url, data=payload)
+    req = urllib.request.Request(url, data=payload, method="POST", headers={
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0",
+    })
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode("utf-8"))
