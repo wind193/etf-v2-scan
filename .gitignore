@@ -1,0 +1,9 @@
+# 敏感配置（含 Server酱 Key 和邮箱授权码），绝不提交
+runtime/etf_v2_config.json
+
+# 本地工作区数据（自动化、记忆日志等）
+.workbuddy/
+
+# Python
+__pycache__/
+*.pyc
