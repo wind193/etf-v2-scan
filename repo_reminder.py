@@ -17,6 +17,29 @@ from email.mime.text import MIMEText
 
 
 # ============================================================
+# 交易日判断（A股交易日，节假日自动跳过）
+# ============================================================
+def is_trading_day():
+    """拉上证指数日K线：最后一根K线日期==今天 → 今天是A股交易日。
+    节假日/周末时最后一根是上一个交易日，天然跳过。接口失败回退周一至周五。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,5,qfq"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+        stock = d.get("data", {}).get("sh000001", {})
+        klines = stock.get("qfqday") or stock.get("day") or []
+        if not klines:
+            raise ValueError("无K线数据")
+        last_date = str(klines[-1][0])
+        print(f"[交易日判断] 上证最新K线日期: {last_date} | 今天: {today}")
+        return last_date == today
+    except Exception as e:
+        print(f"[交易日判断接口失败，回退：周一至周五视为交易日] {e}", file=sys.stderr)
+        return datetime.now().weekday() < 5
+
+
+# ============================================================
 # 推送通道（与 etf_v2_scan.py 同逻辑，独立实现避免耦合）
 # ============================================================
 def push_serverchan(sendkey, title, content):
@@ -121,6 +144,12 @@ def main():
     smtp_to = os.environ.get("SMTP_TO", smtp_user)
 
     wd, content = build_content()
+
+    # 非A股交易日（节假日/周末）跳过推送
+    if not is_trading_day():
+        print(f"今天（{wd}）不是A股交易日，跳过推送")
+        return
+
     title = f"💰 逆回购提醒（{wd}）"
 
     # 三通道推送
