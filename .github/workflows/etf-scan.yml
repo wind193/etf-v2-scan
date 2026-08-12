@@ -25,8 +25,9 @@ jobs:
       - name: 运行策略扫描（自动双通道推送）
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
-          SMTP_USER: 18201691896@163.com
+          SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_TO: 18201691896@163.com
         run: python etf_v2_scan.py
 

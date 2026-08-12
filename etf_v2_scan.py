@@ -154,9 +154,11 @@ def format_wechat_content(result):
 # SMTP 邮件推送 — 直连163邮箱，零确认全自动
 # ============================================================
 def push_email(user, password, to_addr, subject, html_body):
-    """通过 SMTP 发送邮件（163邮箱）"""
+    """通过 SMTP 发送邮件（支持任意邮箱，SMTP_HOST/SMTP_PORT 环境变量可覆盖，默认163）"""
     if not user or not password:
         return False
+    host = os.environ.get("SMTP_HOST", "smtp.163.com")
+    port = int(os.environ.get("SMTP_PORT", "465"))
     try:
         msg = MIMEMultipart("alternative")
         msg["From"] = user
@@ -165,7 +167,7 @@ def push_email(user, password, to_addr, subject, html_body):
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
         ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL("smtp.163.com", 465, context=ctx) as server:
+        with smtplib.SMTP_SSL(host, port, context=ctx) as server:
             server.login(user, password)
             server.sendmail(user, [to_addr], msg.as_string())
         return True
