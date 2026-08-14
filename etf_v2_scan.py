@@ -168,11 +168,12 @@ def format_wechat_content(result):
 # SMTP 邮件推送 — 直连163邮箱，零确认全自动
 # ============================================================
 def push_email(user, password, to_addr, subject, html_body):
-    """通过 SMTP 发送邮件（支持任意邮箱，SMTP_HOST/SMTP_PORT 环境变量可覆盖，默认163）"""
+    """通过 SMTP 发送邮件（SMTP_HOST/SMTP_PORT 环境变量优先，回退配置文件，默认 smtp.qq.com）"""
     if not user or not password:
         return False
-    host = os.environ.get("SMTP_HOST", "smtp.163.com")
-    port = int(os.environ.get("SMTP_PORT", "465"))
+    _cfg = load_config()
+    host = os.environ.get("SMTP_HOST") or _cfg.get("smtp_host") or "smtp.qq.com"
+    port = int(os.environ.get("SMTP_PORT") or _cfg.get("smtp_port") or 465)
     try:
         msg = MIMEMultipart("alternative")
         msg["From"] = user
@@ -698,9 +699,9 @@ def make_decision(state, all_klines):
     elif current_state == "CASH" and not all_negative:
         action, target, reason = "hold", position, "T12 现金+无合格 → 继续持有"
 
-    # T6: 进攻持仓，最强合格≠当前，满3天冷静期 → 切换
-    elif current_state == "ATTACK" and best_sub and cooldown_met:
-        action, target, reason = "switch", best_sub[0], f"T6 满{COOLDOWN_DAYS}天+更强信号 → {ETF_NAMES[best_sub[0]]}"
+    # T6: 进攻持仓，合格替补动量>当前持仓，满3天冷静期 → 切换
+    elif current_state == "ATTACK" and best_sub and cooldown_met and pos_mom is not None and best_sub[1] > pos_mom:
+        action, target, reason = "switch", best_sub[0], f"T6 满{COOLDOWN_DAYS}天+更强信号(动量{best_sub[1]:+.2f}%>{pos_mom:+.2f}%) → {ETF_NAMES[best_sub[0]]}"
 
     # T7: 进攻持仓，未满冷静期或无需切换 → 继续持有
     elif current_state == "ATTACK":
@@ -796,45 +797,6 @@ def format_signal(result):
 # ============================================================
 # 主入口
 # ============================================================
-def main():
-    parser = argparse.ArgumentParser(description="ETF V2 动量策略扫描")
-    parser.add_argument("--dry", action="store_true", help="干跑模式，不更新状态不推送")
-    parser.add_argument("--push-only", action="store_true", help="仅推送（需预先有数据缓存）")
-    parser.add_argument("--set-serverchan", type=str, metavar="KEY", help="设置 Server酱 SendKey（微信推送）")
-    parser.add_argument("--set-email", type=str, metavar="CODE", help="设置163邮箱SMTP授权码（邮件推送）")
-    args = parser.parse_args()
-
-    # 设置 Server酱
-    if args.set_serverchan:
-        cfg = load_config()
-        cfg["serverchan_key"] = args.set_serverchan
-        save_config(cfg)
-        print("✅ Server酱 SendKey 已保存")
-        ok = push_serverchan(args.set_serverchan, "ETF V2 策略已就绪",
-                             "✅ Server酱配置成功\n每日14:25自动推送信号")
-        if ok:
-            print("✅ 微信推送测试成功，请检查微信")
-        else:
-            print("⚠️ 微信推送测试失败，请检查 SendKey")
-        return
-
-    # 设置邮件
-    if args.set_email:
-        cfg = load_config()
-        cfg["email_user"] = "18201691896@163.com"
-        cfg["email_pass"] = args.set_email
-        cfg["email_to"] = "18201691896@163.com"
-        save_config(cfg)
-        print("✅ 163邮箱 SMTP 授权码已保存")
-        ok = push_email(cfg["email_user"], cfg["email_pass"], cfg["email_to"],
-                        "✅ ETF V2 邮件推送已就绪",
-                        "<h2>✅ SMTP 配置成功</h2><p>每日14:25自动推送策略信号到本邮箱</p>")
-        if ok:
-            print("✅ 邮件推送测试成功，请检查163邮箱")
-        else:
-            print("⚠️ 邮件推送测试失败，请检查授权码")
-        return
-
 def run_scan(cloud=False, dry=False):
     """扫描主流程。cloud=True 状态存163邮箱；dry=True 不更新状态不推送"""
     cfg = load_config()
@@ -950,16 +912,17 @@ def main():
     # 设置邮件
     if args.set_email:
         cfg = load_config()
-        cfg["email_user"] = "18201691896@163.com"
         cfg["email_pass"] = args.set_email
-        cfg["email_to"] = "18201691896@163.com"
+        if not cfg.get("email_user"):
+            cfg["email_user"] = "3322351941@qq.com"
+            cfg["email_to"] = "18201691896@163.com"
         save_config(cfg)
-        print("✅ 163邮箱 SMTP 授权码已保存")
+        print(f"✅ SMTP 授权码已保存（发件: {cfg.get('email_user')}）")
         ok = push_email(cfg["email_user"], cfg["email_pass"], cfg["email_to"],
                         "✅ ETF V2 邮件推送已就绪",
                         "<h2>✅ SMTP 配置成功</h2><p>每日14:25自动推送策略信号到本邮箱</p>")
         if ok:
-            print("✅ 邮件推送测试成功，请检查163邮箱")
+            print("✅ 邮件推送测试成功，请检查邮箱")
         else:
             print("⚠️ 邮件推送测试失败，请检查授权码")
         return
