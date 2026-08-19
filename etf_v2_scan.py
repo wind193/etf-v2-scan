@@ -332,10 +332,13 @@ def fetch_etf_kline(symbol, count=500):
 # 指标计算（纯 Python）
 # ============================================================
 def calc_momentum(kline_data, window=MOMENTUM_WINDOW):
-    """22日动量 = close[-1] / close[-(window+1)] - 1"""
+    """
+    22日动量 = close[-1] / close[-window] - 1
+    口径说明（2026-08-19 对齐同事口径）: 基准取倒数第 window 根K线（实际跨 window-1 个交易日）
+    """
     if len(kline_data) < window + 1:
         return None
-    return kline_data[-1]["close"] / kline_data[-(window + 1)]["close"] - 1
+    return kline_data[-1]["close"] / kline_data[-window]["close"] - 1
 
 
 def calc_sma(kline_data, n):
