@@ -333,12 +333,16 @@ def fetch_etf_kline(symbol, count=500):
 # ============================================================
 def calc_momentum(kline_data, window=MOMENTUM_WINDOW):
     """
-    22日动量 = close[-1] / close[-window] - 1
-    口径说明（2026-08-19 对齐同事口径）: 基准取倒数第 window 根K线（实际跨 window-1 个交易日）
+    22日动量 = close[-1] / close[-(window+1)] - 1
+    口径说明（2026-08-21 对齐同事口径·修正）:
+      同事口径: 22日动量 = 23根K线的首尾收盘价比值
+      起始价 = 22个交易日前的收盘价（即倒数第 window+1 根K线，close[-(window+1)]）
+      结束价 = 当日实时价（盘中未收盘时 close 随实时价更新）
+    ⚠️ 2026-08-19 曾误改为 close[-window]（21日区间），2026-08-21 排查对比后改回
     """
-    if len(kline_data) < window + 1:
+    if len(kline_data) < window + 2:
         return None
-    return kline_data[-1]["close"] / kline_data[-window]["close"] - 1
+    return kline_data[-1]["close"] / kline_data[-(window + 1)]["close"] - 1
 
 
 def calc_sma(kline_data, n):
