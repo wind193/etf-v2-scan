@@ -632,6 +632,10 @@ def make_decision(state, all_klines):
 
     all_negative = all(s[1] < 0 for s in attack_scores) if attack_scores else True
 
+    # 黄金自身 22 日动量（用于 T1/T10 判断黄金是否有防守价值）
+    gold_mom = signals.get(GOLD_ETF, {}).get("momentum")
+    gold_negative = gold_mom is not None and gold_mom < 0
+
     # ---- 3. 当前状态和持仓动量 ----
     if position in ATTACK_ETFS:
         current_state = "ATTACK"
@@ -666,9 +670,17 @@ def make_decision(state, all_klines):
     target = None
     reason = ""
 
-    # T1: 三只ETF全负 → 黄金（风险退出，绕过冷静期）
+    # T1: 三只ETF全负 → 黄金或现金（风险退出，绕过冷静期）
+    #     2026-11-11 优化：三进攻全负时，若黄金自身22日动量也为负（黄金也在跌），
+    #     则改持现金，不硬接黄金下跌；否则仍切黄金防守。
     if current_state in ("ATTACK", "CASH") and all_negative and position != GOLD_ETF:
-        action, target, reason = "switch", GOLD_ETF, "T1 三只ETF全负 → 黄金(风险退出)"
+        if gold_negative:
+            if current_state == "CASH":
+                action, target, reason = "hold", position, "T1 三只ETF全负且黄金为负 → 继续现金"
+            else:
+                action, target, reason = "switch", "CASH", "T1 三只ETF全负且黄金为负 → 现金"
+        else:
+            action, target, reason = "switch", GOLD_ETF, "T1 三只ETF全负且黄金非负 → 黄金(风险退出)"
 
     # T2: 进攻持仓动量<0，有合格替补 → 切入最强替补
     elif current_state == "ATTACK" and pos_mom is not None and pos_mom < 0 and best_sub:
@@ -686,17 +698,26 @@ def make_decision(state, all_klines):
     elif current_state == "ATTACK" and signals[position].get("bias_hits", 0) >= BIAS_HIT_REQUIRED and not best_sub:
         action, target, reason = "switch", "CASH", "T5 BIAS过热+无替补 → 现金"
 
-    # T8: 黄金状态，存在合格ETF → 切进攻
+    # T8: 黄金状态，存在合格ETF → 切进攻（进攻优先）
     elif current_state == "GOLD" and best_sub:
         action, target, reason = "switch", best_sub[0], f"T8 黄金+存在合格ETF → {ETF_NAMES[best_sub[0]]}"
+
+    # T9a: 黄金状态，无合格进攻ETF 且 黄金自身转负 → 切现金（防守失效）
+    #      2026-11-11 补全：黄金只是防守仓位，目的是进攻。当进攻全无机会、
+    #      黄金自己也走负（防守失效）时，放弃黄金改持现金，不硬扛黄金下跌。
+    elif current_state == "GOLD" and not best_sub and gold_negative:
+        action, target, reason = "switch", "CASH", "T9a 黄金持仓+无合格进攻且黄金转负 → 现金"
 
     # T9: 黄金状态，无合格ETF → 继续持有
     elif current_state == "GOLD" and not best_sub:
         action, target, reason = "hold", position, "T9 黄金+无合格ETF → 继续持有"
 
-    # T10: 现金状态，全负 → 黄金
+    # T10: 现金状态，全负 → 黄金（黄金已转正才接回；仍为负则继续现金）
     elif current_state == "CASH" and all_negative:
-        action, target, reason = "switch", GOLD_ETF, "T10 现金+全负 → 黄金"
+        if gold_negative:
+            action, target, reason = "hold", position, "T10 现金+全负且黄金为负 → 继续现金"
+        else:
+            action, target, reason = "switch", GOLD_ETF, "T10 现金+全负且黄金非负 → 黄金"
 
     # T11: 现金状态，有合格ETF → 切入
     elif current_state == "CASH" and best_sub:
